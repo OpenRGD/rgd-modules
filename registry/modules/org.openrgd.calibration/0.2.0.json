@@ -1,0 +1,44 @@
+{
+  "schema_version": "0.1.0-candidate",
+  "id": "org.openrgd.calibration",
+  "version": "0.2.0",
+  "display_name": "OpenRGD Calibration",
+  "publisher": "OpenRGD",
+  "category": "calibration",
+  "summary": "Read-only OpenRGD model calibration inspection and historical profile validation",
+  "maturity": "candidate",
+  "capabilities": [
+    "calibration.profile.validate",
+    "calibration.profile.seal",
+    "calibration.profile.persist",
+    "calibration.bindings.inspect",
+    "calibration.passive.inspect",
+    "calibration.passive.coverage",
+    "calibration.passive.readonly_delta_preview"
+  ],
+  "permissions_required": [],
+  "safety": {
+    "non_actuating": true,
+    "automatic_motion_on_load": false,
+    "active_calibration_supported": false
+  },
+  "source": {
+    "git_url": "https://github.com/OpenRGD/rgd-calibration.git",
+    "commit_sha": "81700401e2fa6d370a86b6c1f5a48802bc5f1fc7",
+    "module_manifest": "module.openrgd.json"
+  },
+  "distribution": {
+    "kind": "pinned_git_cargo",
+    "hosts": [
+      "linux-x86_64"
+    ],
+    "package": "rgd-calibration",
+    "binary": "rgd-calibration"
+  },
+  "integration": {
+    "interface": "command_line_json",
+    "read_only_command": "inspect",
+    "argument_contract": "docs/CONSOLE_INTEGRATION.md",
+    "report_contract": "https://github.com/OpenRGD/rgd-calibration/blob/81700401e2fa6d370a86b6c1f5a48802bc5f1fc7/contracts/passive-report.v0.2.schema.json"
+  }
+}
