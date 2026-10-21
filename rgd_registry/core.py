@@ -98,21 +98,25 @@ def _validate_descriptor(item: dict) -> None:
     )
     if not all(isinstance(x, dict) for x in (source, distribution, safety)):
         raise RegistryError("source, distribution and safety are required objects")
-    if not _OPENRGD_GIT.fullmatch(source.get("git_url", "")):
+    git_url = source.get("git_url")
+    commit_sha = source.get("commit_sha")
+    if not isinstance(git_url, str) or not _OPENRGD_GIT.fullmatch(git_url):
         raise RegistryError("unapproved git origin; only OpenRGD HTTPS repos allowed")
-    if not _GIT_SHA.fullmatch(source.get("commit_sha", "")):
+    if not isinstance(commit_sha, str) or not _GIT_SHA.fullmatch(commit_sha):
         raise RegistryError("source must pin an immutable 40-hex commit SHA")
     if source.get("module_manifest") != "module.openrgd.json":
         raise RegistryError("unrecognized module manifest")
     if distribution.get("kind") != "pinned_git_cargo":
         raise RegistryError("unsupported distribution kind")
-    if distribution.get("package") != "rgd-calibration":
-        raise RegistryError("unapproved Rust package in bootstrap registry")
-    if distribution.get("binary") != "rgd-calibration":
-        raise RegistryError("unapproved executable name")
-    hosts = distribution.get("hosts", [])
-    if hosts != ["linux-x86_64"]:
-        raise RegistryError("registry v0.1 supports linux-x86_64 only")
+    for field in ("package", "binary"):
+        value = distribution.get(field)
+        if not isinstance(value, str) or not re.fullmatch(r"[a-z][a-z0-9_-]*", value):
+            raise RegistryError(f"invalid Cargo {field} name")
+    hosts = distribution.get("hosts")
+    if not isinstance(hosts, list) or not hosts or any(
+        host not in {"linux-x86_64", "linux-aarch64"} for host in hosts
+    ) or len(hosts) != len(set(hosts)):
+        raise RegistryError("unknown or duplicated build hosts")
     if safety != {
         "non_actuating": True,
         "automatic_motion_on_load": False,
@@ -151,6 +155,33 @@ def _digest(path: Path) -> str:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             hash_.update(chunk)
     return "sha256:" + hash_.hexdigest()
+
+
+def _source_tree_digest(source: Path) -> str:
+    """Tamper-evident source fingerprint, never software attestation."""
+    if source.is_symlink() or not source.is_dir():
+        raise RegistryError("source directory is missing or a symlink")
+    digest = hashlib.sha256()
+    total = 0
+    for item in sorted(source.rglob("*")):
+        if item.is_symlink():
+            raise RegistryError("installed source contains a symbolic link")
+        if not item.is_file():
+            if not item.is_dir():
+                raise RegistryError("installed source contains an unsupported file type")
+            continue
+        relative = item.relative_to(source).as_posix().encode("utf-8")
+        size = item.stat().st_size
+        total += size
+        if total > 128 * 1024 * 1024:
+            raise RegistryError("installed source exceeds size limit")
+        digest.update(len(relative).to_bytes(8, "big"))
+        digest.update(relative)
+        digest.update(size.to_bytes(8, "big"))
+        with item.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+    return "sha256:" + digest.hexdigest()
 
 
 def _run(argv: list[str], *, cwd: Path | None = None) -> str:
@@ -201,8 +232,31 @@ def _verify_upstream_manifest(source: Path, item: dict) -> None:
             raise RegistryError(f"upstream module manifest mismatch: {key}")
     if set(data.get("capabilities", [])) != set(item["capabilities"]):
         raise RegistryError("upstream declared capabilities differ from registry")
-    if not (source / "Cargo.lock").is_file():
-        raise RegistryError("source is missing Cargo.lock")
+    cargo = source / "Cargo.toml"
+    lock = source / "Cargo.lock"
+    for path in (cargo, lock, source / "module.openrgd.json"):
+        if path.is_symlink() or not path.is_file():
+            raise RegistryError("Cargo/manifest file missing or symbolic link")
+    package_text = cargo.read_text(encoding="utf-8")
+    lock_text = lock.read_text(encoding="utf-8")
+    section = re.search(r"(?ms)^\[package\]\s*(.*?)(?=^\[|\Z)", package_text)
+    if section is None:
+        raise RegistryError("Cargo.toml is missing the [package] section")
+    def cargo_property(name: str) -> str | None:
+        match = re.search(
+            rf'(?m)^\s*{name}\s*=\s*"([^"]+)"', section.group(1)
+        )
+        return match.group(1) if match else None
+    if cargo_property("name") != item["distribution"]["package"] or cargo_property(
+        "version"
+    ) != item["version"]:
+        raise RegistryError("Cargo package name/version mismatch")
+    package = re.escape(item["distribution"]["package"])
+    version = re.escape(item["version"])
+    if not re.search(
+        rf'(?m)^name = "{package}"\nversion = "{version}"$', lock_text
+    ):
+        raise RegistryError("Cargo.lock package version mismatch")
 
 
 def _host() -> str:
@@ -259,6 +313,7 @@ def install(
             shutil.rmtree(src / "target", ignore_errors=True)
         # Git metadata and remote origin are not needed for offline installed use.
         shutil.rmtree(src / ".git", ignore_errors=True)
+        source_digest = _source_tree_digest(src)
         status = "ready" if build else "source_only"
         info = {
             "registry_contract": CONTRACT_VERSION,
@@ -268,6 +323,7 @@ def install(
             "installed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "status": status,
             "binary_sha256": binary_sha,
+            "source_tree_sha256": source_digest,
         }
         (stage / "installed.json").write_text(
             json.dumps(info, indent=2, sort_keys=True) + "\n", encoding="utf-8"
@@ -300,8 +356,13 @@ def status_of(
             }.items()
         ):
             raise RegistryError("installed metadata disagrees with catalog")
+        if recorded.get("source_tree_sha256") != _source_tree_digest(final / "source"):
+            raise RegistryError("installed source digest mismatch")
+        _verify_upstream_manifest(final / "source", item)
         mode = recorded.get("status")
         if mode == "ready":
+            if (final / "bin").is_symlink():
+                raise RegistryError("installed binary directory must not be a symlink")
             executable = final / "bin" / item["distribution"]["binary"]
             if executable.is_symlink() or not executable.is_file():
                 raise RegistryError("binary is missing or a symbolic link")
@@ -316,7 +377,6 @@ def status_of(
                 "source_commit": recorded["source_commit"],
             }
         if mode == "source_only":
-            _verify_upstream_manifest(final / "source", item)
             return {"module_id": item["id"], "version": item["version"], "status": "source_only"}
         raise RegistryError("unknown installed state")
     except (RegistryError, OSError, ValueError):

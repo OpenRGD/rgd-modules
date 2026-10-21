@@ -1,4 +1,6 @@
 """Synthetic registry tests. No network, no hardware, no real module execution."""
+import contextlib
+import io
 import json
 import tempfile
 import unittest
@@ -152,16 +154,16 @@ class RegistryContractTests(unittest.TestCase):
 
     def test_cli_discovery_and_status_are_structured(self):
         with tempfile.TemporaryDirectory() as folder:
-            with mock.patch("sys.stdout") as out:
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
                 code = main(["catalog"])
-                self.assertEqual(code, 0)
-                output = "".join(c.args[0] for c in out.call_args_list)
-                self.assertIn('"id": "org.openrgd.calibration"', output)
-            with mock.patch("sys.stdout") as out:
+            self.assertEqual(code, 0)
+            self.assertIn('"id": "org.openrgd.calibration"', out.getvalue())
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
                 code = main(["status", "org.openrgd.calibration", "--prefix", folder])
-                self.assertEqual(code, 0)
-                output = "".join(c.args[0] for c in out.call_args_list)
-                self.assertIn('"status": "not_installed"', output)
+            self.assertEqual(code, 0)
+            self.assertIn('"status": "not_installed"', out.getvalue())
 
 
 if __name__ == "__main__":
