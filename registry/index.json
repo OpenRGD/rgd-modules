@@ -1,0 +1,10 @@
+{
+  "registry_schema_version": "0.1.0-candidate",
+  "modules": [
+    {
+      "id": "org.openrgd.calibration",
+      "version": "0.2.0",
+      "path": "modules/org.openrgd.calibration/0.2.0.json"
+    }
+  ]
+}

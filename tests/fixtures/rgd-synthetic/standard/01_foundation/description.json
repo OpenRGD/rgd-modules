@@ -1,0 +1,13 @@
+{
+  "meta_group": {
+    "model_id_str": "registry_ci_synthetic_robot"
+  },
+  "joint_topology_map": {
+    "joint_1": {
+      "type_enum": "REVOLUTE"
+    }
+  },
+  "sensors_mounting_map": {},
+  "actuators_topology_map": {},
+  "test_notice": "SYNTHETIC ONLY; NOT A PHYSICAL ROBOT"
+}
