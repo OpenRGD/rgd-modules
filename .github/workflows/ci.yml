@@ -49,8 +49,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Install pinned Calibration source and build binary (explicit CI action)
         run: |
-          python3 -m rgd_registry install org.openrgd.calibration --build --prefix "$RUNNER_TEMP/openrgd" > /tmp/install.json
-          python3 -m rgd_registry resolve org.openrgd.calibration --prefix "$RUNNER_TEMP/openrgd" > /tmp/resolve.json
+          python3 -m rgd_registry install org.openrgd.calibration --version 0.2.0 --build --prefix "$RUNNER_TEMP/openrgd" > /tmp/install.json
+          python3 -m rgd_registry resolve org.openrgd.calibration --version 0.2.0 --prefix "$RUNNER_TEMP/openrgd" > /tmp/resolve.json
       - name: Invoke read-only Calibration inspection over synthetic fixture
         run: |
           "$RUNNER_TEMP/openrgd/modules/org.openrgd.calibration/0.2.0/bin/rgd-calibration" inspect \

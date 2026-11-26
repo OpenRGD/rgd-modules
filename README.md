@@ -2,7 +2,9 @@
 
 **Candidate v0.1** — optional OpenRGD software module discovery and explicit installation. This distribution catalog is **not** a new Canonical RGD domain, a Body Adapter registry, or the source of motion/safety authority.
 
-## Available module
+## Bootstrap compatibility baseline
+
+This table records the initial pinned Calibration release, not an independently maintained list of current releases. Use `python3 -m rgd_registry catalog` for the actual catalog.
 
 | Module | Version | Source | Install support |
 | --- | --- | --- | --- |
@@ -28,8 +30,8 @@ The tool validates the existing descriptor/index schemas and registry checks, re
 
 ```bash
 python3 -m rgd_registry catalog
-python3 -m rgd_registry show org.openrgd.calibration
-python3 -m rgd_registry status org.openrgd.calibration
+python3 -m rgd_registry show org.openrgd.calibration --version 0.2.0
+python3 -m rgd_registry status org.openrgd.calibration --version 0.2.0
 ```
 
 Registry is a versioned, local JSON index:
@@ -46,13 +48,13 @@ Requires Python 3.10+, Git and (for `--build`) Rust/Cargo plus network access du
 
 ```bash
 # SOURCE ONLY: pulls checked pinned source without compilation.
-python3 -m rgd_registry install org.openrgd.calibration
+python3 -m rgd_registry install org.openrgd.calibration --version 0.2.0
 
 # Or build an executable by explicitly accepting Cargo compilation:
-python3 -m rgd_registry install org.openrgd.calibration --build
+python3 -m rgd_registry install org.openrgd.calibration --version 0.2.0 --build
 
 # Verify the installed binary SHA-256 and retrieve its absolute path:
-python3 -m rgd_registry resolve org.openrgd.calibration
+python3 -m rgd_registry resolve org.openrgd.calibration --version 0.2.0
 ```
 
 Choose **one** of the two installation forms; another `install` never overwrites an existing version. Source-only is not executable (state `source_only`). The `--build` mode can run Rust dependency build scripts: Console must request user approval. All git/cargo subprocesses are invoked with structured argument arrays and `shell=False`. The fetched Git commit, upstream module manifest and Cargo.lock are validated.

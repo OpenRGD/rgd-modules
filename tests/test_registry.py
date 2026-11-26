@@ -59,7 +59,7 @@ class RegistryContractTests(unittest.TestCase):
     def test_catalog_is_local_read_only_and_does_not_clone_or_build(self):
         with mock.patch.object(core, "_run") as runner:
             core.catalog()
-            core.entry("org.openrgd.calibration")
+            core.entry("org.openrgd.calibration", "0.2.0")
             runner.assert_not_called()
 
     def test_rejects_unknown_version_and_traversal(self):
@@ -76,27 +76,27 @@ class RegistryContractTests(unittest.TestCase):
             with mock.patch.object(core, "_fetch_pinned", side_effect=make_fake_source), mock.patch.object(
                 core, "_run"
             ) as execute:
-                state = core.install("org.openrgd.calibration", prefix=prefix)
+                state = core.install("org.openrgd.calibration", version="0.2.0", prefix=prefix)
                 execute.assert_not_called()
             self.assertEqual(state["status"], "source_only")
             self.assertEqual(
-                core.status_of("org.openrgd.calibration", prefix=prefix)["status"],
+                core.status_of("org.openrgd.calibration", version="0.2.0", prefix=prefix)["status"],
                 "source_only",
             )
             with self.assertRaises(core.RegistryError):
-                core.resolve_binary("org.openrgd.calibration", prefix=prefix)
+                core.resolve_binary("org.openrgd.calibration", version="0.2.0", prefix=prefix)
             with self.assertRaises(core.RegistryError):
-                core.install("org.openrgd.calibration", prefix=prefix)
+                core.install("org.openrgd.calibration", version="0.2.0", prefix=prefix)
 
     def test_source_mutation_must_not_be_treated_as_healthy(self):
         with tempfile.TemporaryDirectory() as folder:
             prefix = Path(folder)
             with mock.patch.object(core, "_fetch_pinned", side_effect=make_fake_source):
-                core.install("org.openrgd.calibration", prefix=prefix)
+                core.install("org.openrgd.calibration", version="0.2.0", prefix=prefix)
             source = prefix / "modules" / "org.openrgd.calibration" / "0.2.0" / "source"
             (source / "src" / "marker.txt").write_text("changed")
             self.assertEqual(
-                core.status_of("org.openrgd.calibration", prefix=prefix)["status"],
+                core.status_of("org.openrgd.calibration", version="0.2.0", prefix=prefix)["status"],
                 "tampered",
             )
 
@@ -108,19 +108,19 @@ class RegistryContractTests(unittest.TestCase):
                 mock.patch.object(core, "_run", side_effect=make_fake_build),
                 mock.patch.object(core, "_host", return_value="linux-x86_64"),
             ):
-                state = core.install("org.openrgd.calibration", prefix=prefix, build=True)
+                state = core.install("org.openrgd.calibration", version="0.2.0", prefix=prefix, build=True)
             self.assertEqual(state["status"], "ready")
             self.assertEqual(state["module_id"], "org.openrgd.calibration")
-            resolved = core.resolve_binary("org.openrgd.calibration", prefix=prefix)
+            resolved = core.resolve_binary("org.openrgd.calibration", version="0.2.0", prefix=prefix)
             self.assertEqual(resolved["status"], "ready")
             with open(resolved["binary"], "wb") as binary:
                 binary.write(b"tampered")
             self.assertEqual(
-                core.status_of("org.openrgd.calibration", prefix=prefix)["status"],
+                core.status_of("org.openrgd.calibration", version="0.2.0", prefix=prefix)["status"],
                 "tampered",
             )
             with self.assertRaises(core.RegistryError):
-                core.resolve_binary("org.openrgd.calibration", prefix=prefix)
+                core.resolve_binary("org.openrgd.calibration", version="0.2.0", prefix=prefix)
 
     def test_unsupported_build_host_is_blocked_before_download(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -128,7 +128,7 @@ class RegistryContractTests(unittest.TestCase):
                 core, "_fetch_pinned"
             ) as fetch:
                 with self.assertRaises(core.RegistryError):
-                    core.install("org.openrgd.calibration", prefix=Path(folder), build=True)
+                    core.install("org.openrgd.calibration", version="0.2.0", prefix=Path(folder), build=True)
                 fetch.assert_not_called()
 
     def test_manifest_mismatch_aborts_without_installed_directory(self):
@@ -142,13 +142,13 @@ class RegistryContractTests(unittest.TestCase):
                 file.write_text(json.dumps(data))
             with mock.patch.object(core, "_fetch_pinned", side_effect=bad_source):
                 with self.assertRaises(core.RegistryError):
-                    core.install("org.openrgd.calibration", prefix=root)
+                    core.install("org.openrgd.calibration", version="0.2.0", prefix=root)
             self.assertFalse(
                 (root / "modules" / "org.openrgd.calibration" / "0.2.0").exists()
             )
 
     def test_bad_descriptor_permissions_are_rejected(self):
-        descriptor = core.entry("org.openrgd.calibration").copy()
+        descriptor = core.entry("org.openrgd.calibration", "0.2.0").copy()
         descriptor["permissions_required"] = ["motor.write"]
         with self.assertRaises(core.RegistryError):
             core._validate_descriptor(descriptor)
@@ -162,7 +162,7 @@ class RegistryContractTests(unittest.TestCase):
             self.assertIn('"id": "org.openrgd.calibration"', out.getvalue())
             out = io.StringIO()
             with contextlib.redirect_stdout(out):
-                code = main(["status", "org.openrgd.calibration", "--prefix", folder])
+                code = main(["status", "org.openrgd.calibration", "--version", "0.2.0", "--prefix", folder])
             self.assertEqual(code, 0)
             self.assertIn('"status": "not_installed"', out.getvalue())
 
