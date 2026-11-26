@@ -1,0 +1,42 @@
+name: EXT-01B.3 TUF candidate trust review
+on:
+  pull_request:
+    paths: ['tools/review_trusted_candidate.py', 'tests_trust/**', 'docs/PUBLICATION_TRUST_EXT_01B3.md', '.github/workflows/publication-trust.yml']
+permissions:
+  contents: read
+jobs:
+  trust-review:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.10', '3.12']
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: OpenRGD/openrgd
+          ref: ce2d24ae056f29607c093c9dd289fa9205146a99
+          path: .upstream/core
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Verify exact pin and protected registry paths
+        run: |
+          test "$(git -C .upstream/core rev-parse HEAD)" = ce2d24ae056f29607c093c9dd289fa9205146a99
+          git diff --exit-code 40505297d09d327939d0ad61b2415ae76e5ffe2b HEAD -- registry rgd_registry
+          git diff --check 40505297d09d327939d0ad61b2415ae76e5ffe2b HEAD
+      - name: Install test-only direct dependencies
+        run: python -m pip install jsonschema==4.23.0 packaging==25.0 build==1.3.0 setuptools==80.9.0 wheel==0.45.1 tuf==7.0.1 'securesystemslib[crypto]==1.6.0'
+      - name: Real TUF client, ephemeral keys, actual wheel
+        env:
+          PYTHONPATH: ${{ github.workspace }}/.upstream/core/contracts/module-publication/v0.1.0:${{ github.workspace }}/.upstream/core/contracts/publication-trust/v0.1.0:${{ github.workspace }}
+        run: |
+          python -m unittest discover -s tests_trust -v
+          python -O -m unittest discover -s tests_trust -v
+          python -m tools.generate_index --check
