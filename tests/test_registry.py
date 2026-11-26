@@ -45,8 +45,9 @@ def make_fake_build(args, *, cwd=None):
 class RegistryContractTests(unittest.TestCase):
     def test_calibration_is_registered_at_exact_merged_commit(self):
         entries = core.catalog()
-        self.assertEqual(len(entries), 1)
-        item = entries[0]
+        matches = [item for item in entries if (item["id"], item["version"]) == ("org.openrgd.calibration", "0.2.0")]
+        self.assertEqual(len(matches), 1)
+        item = matches[0]
         self.assertEqual(item["id"], "org.openrgd.calibration")
         self.assertEqual(item["version"], "0.2.0")
         self.assertEqual(item["source"]["commit_sha"], EXPECTED_PIN)

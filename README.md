@@ -10,6 +10,20 @@
 
 The published descriptor is pinned to commit `81700401e2fa6d370a86b6c1f5a48802bc5f1fc7` (CAL-0.2 merged). Not a floating GitHub branch, GitHub Release, prebuilt binary or signed package.
 
+## Maintaining the official catalog (candidate)
+
+Reviewed v0.1 release descriptors under `registry/modules/<module-id>/<version>.json` are the authoritative inputs of the **generated** index. Add a reviewed descriptor once; do not maintain a second list in Console or RGD-OS.
+
+For maintainers only, using the test dependency:
+
+```bash
+python3 -m pip install jsonschema==4.23.0
+python3 -m tools.generate_index --write
+python3 -m tools.generate_index --check
+```
+
+The tool validates the existing descriptor/index schemas and registry checks, rejects malformed layouts, and writes only the local index after successful validation. CI requires exact index reproduction. It does not approve, fetch or install a release, verify publisher trust, or grant any permission. Submit both the descriptor and generated index through review; no automatic publication. Existing v0.1 installs still use the pinned snapshot. A future manifest-to-release generator and authenticated snapshot protocol need separate reviewed changes.
+
 ## Offline discovery (no install / no execution)
 
 ```bash
@@ -52,7 +66,7 @@ After a ready installation, invoke the resolved `rgd-calibration` binary with `i
 ## Important limitations
 
 - The registry protocol and Calibration module descriptor are **candidate** and do not establish any accepted Canonical Core contract.
-- No `OpenRGD/openrgd-console` repository currently exists; this repo provides an installable backend contract for future Console integration, **not a working Console button**.
+- [OpenRGD Console](https://github.com/OpenRGD/rgd-console) v0.4.3 consumes a pinned registry snapshot through its Module Agent; catalog refresh/publication and general lifecycle support are separate future work.
 - No GitHub Release or signed prebuilt binaries; installation compiles a pinned source commit, not an attested artifact.
 - No auto-install, updates, auto-execution or motor capabilities. Future high-risk modules need a separate permission/sandbox policy.
 - Installing a module never changes an RGD standard/profile or certifies real observations.
