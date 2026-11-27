@@ -40,7 +40,7 @@ def tuf_reservation_authorizer(*,catalog_id,ledger_id,manifest_raw,descriptor_by
         return encode_proposal({"profile":"TUF_OFFLINE_REVIEW_CANDIDATE",
             "request_sha256":digest(request_raw),"review_target_sha256":digest(evidence_raw),
             "review_result_sha256":digest(encode_proposal(result)),"trusted_root_sha256":digest(root),
-            "metadata_sha256":{k:digest(v) for k,v in sorted(metadata.items())},
+            "supplied_metadata_sha256":{k:digest(v) for k,v in sorted(metadata.items())},
             "snapshot_version":result["tuf_snapshot_version"],"timestamp_version":result["tuf_timestamp_version"],
             "publication_committed":False,"installable":False,"grants_authority":False})
     return authorize

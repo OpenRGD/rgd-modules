@@ -62,7 +62,8 @@ class CrashLedger(CandidateLedger):
     def _transaction(self,write):
         with super()._transaction(write) as db:
             yield db
-            if write:os._exit(73)
+            if write and data['crash']=="before":os._exit(73)
+        if write and data['crash']=="after":os._exit(74)
 ledger_type=CrashLedger if data['crash'] else CandidateLedger
 ledger=ledger_type(data['db'],data['catalog'],data['lid'],authorizer=allow)
 if data.get('ready'):
@@ -234,13 +235,21 @@ class LedgerTests(unittest.TestCase):
             db.execute(ddl)
         with self.assertRaisesRegex(LedgerError,"LEDGER_RECEIPT_MISMATCH"):
             self.reopen()
-    def test_capacity_is_fail_closed_not_eviction(self):
-        self.commit()
-        with patch("tools.release_ledger.MAX_EVENTS",1):
+    def test_capacity_reserves_future_control_slots(self):
+        # Three total slots allow one reservation, withdrawal and revocation.
+        with patch("tools.release_ledger.MAX_EVENTS",3):
+            first=self.commit()
+            p=parse(self.p);p["module_version"]="0.2.0";p=encode_proposal(p)
+            e=parse(self.e);e.update(module_version="0.2.0",proposal_sha256=digest(p));e=encode_proposal(e)
+            req=reserve_request(self.lid,p,e)
             with self.assertRaisesRegex(LedgerError,"LEDGER_CAPACITY_REACHED"):
-                self.control("REVOKE",1)
+                self.ledger.apply(encode_proposal(req),p,e)
             self.assertEqual(self.count(),1)
-            self.assertEqual(self.ledger.apply(self.raw,self.p,self.e)["release_revision"],1)
+            self.control("WITHDRAW",1)
+            self.control("REVOKE",2)
+            self.assertEqual(self.count(),3)
+            self.assertEqual(self.ledger.apply(self.raw,self.p,self.e),first)
+            self.assertEqual(self.ledger.current(*self.key)["state_after"],"REVOKED")
     def test_two_independent_threads_exact_retry(self):
         barrier=threading.Barrier(2,timeout=10)
         def worker():
@@ -283,13 +292,33 @@ class LedgerTests(unittest.TestCase):
         self.assertIn({"error":"RELEASE_KEY_CONTENT_CONFLICT"},results)
         self.assertEqual(self.count(),1)
     def test_process_crash_after_insert_before_commit_rolls_back(self):
-        child,_=self.spawn("crash",self.r,self.p,self.e,crash=True)
+        child,_=self.spawn("crash",self.r,self.p,self.e,crash="before")
         out,err=child.communicate(timeout=20)
         self.assertEqual(child.returncode,73,err)
         self.assertEqual(self.reopen().current(*self.key),None)
         self.assertEqual(self.count(),0)
         self.commit()
         self.assertEqual(self.count(),1)
+    def test_process_crash_after_commit_before_ack_returns_original_receipt(self):
+        child,_=self.spawn("lost-ack",self.r,self.p,self.e,crash="after")
+        _,err=child.communicate(timeout=20)
+        self.assertEqual(child.returncode,74,err)
+        reopened=self.reopen(authorizer=None)
+        first=reopened.lookup_receipt(self.r["request_id"])
+        self.assertIsNotNone(first)
+        self.assertEqual(reopened.apply(self.raw,self.p,self.e),first)
+        self.assertEqual(self.count(),1)
+    def test_retained_checkpoint_checked_on_each_transaction(self):
+        self.commit()
+        backup=self.dir/"old.sqlite";shutil.copy2(self.path,backup)
+        self.control("REVOKE",1)
+        checkpoint=self.ledger.checkpoint()
+        held=self.reopen(checkpoint=checkpoint)
+        # Even on the same object, a restored older copy cannot pass the
+        # explicitly provisioned minimum checkpoint. Directory is trusted.
+        shutil.copy2(backup,self.path)
+        with self.assertRaisesRegex(LedgerError,"CHECKPOINT_ROLLBACK"):
+            held.current(*self.key)
     def test_real_tuf_wheel_review_reserved_atomically(self):
         catalog=CatalogFixture()
         bundle=catalog.bundle(self.inputs)

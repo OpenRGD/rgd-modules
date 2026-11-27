@@ -84,6 +84,11 @@ def connect(path):
     db.execute("PRAGMA recursive_triggers=ON")
     return db
 
+def reserved_control_slots(states):
+    """Reserve space for withdrawal AND subsequent revocation, per release."""
+    return sum({"RESERVED_CANDIDATE":2,"WITHDRAWN":1,"REVOKED":0}[r["state_after"]]
+               for r in states.values())
+
 class CandidateLedger:
     """Explicit initialization/open; authorizer is trusted local code, not JSON.
 
@@ -99,12 +104,11 @@ class CandidateLedger:
         self.catalog_id=catalog_id
         self.ledger_id=ledger_id
         self._authorizer=authorizer
+        self._minimum_checkpoint=minimum_checkpoint
         self.legacy_raw,self._legacy_keys=legacy_snapshot()
         scope_checkpoint(catalog_id,ledger_id,self.legacy_raw)
         with self._transaction(False) as db:
-            _,seq,last=self._audit(db)
-            if minimum_checkpoint is not None:
-                self._verify_checkpoint(db,minimum_checkpoint,seq)
+            self._audit(db)
     @classmethod
     def initialize(cls,path,catalog_id,ledger_id,*,authorizer=None):
         """Only explicit exclusive creation. Never recreate missing/corrupt state."""
@@ -193,6 +197,9 @@ class CandidateLedger:
                 raise LedgerError("LEDGER_HISTORY_INVALID") from e
             last=digest(raw)
             states[key]=expected
+        if self._minimum_checkpoint is not None:
+            self._verify_checkpoint(db,self._minimum_checkpoint,seq)
+        require(seq+reserved_control_slots(states)<=MAX_EVENTS,"LEDGER_CONTROL_CAPACITY_INVALID")
         return states,seq,last
 
     def _verify_checkpoint(self,db,raw,seq):
@@ -244,8 +251,13 @@ class CandidateLedger:
                     return decode("ReleaseLedgerReceipt",retry["receipt_raw"])
                 key=req["module_id"],req["module_version"]
                 prior=states.get(key)
-                transition(req,prior)  # conflict/stale/terminal before authorizer
-                require(seq<MAX_EVENTS,"LEDGER_CAPACITY_REACHED")
+                _,next_state=transition(req,prior)  # conflict/stale/terminal before authorizer
+                # A bounded review journal must not reserve so many keys that
+                # an existing release cannot be withdrawn/revoked later.
+                old_slots=0 if prior is None else {"RESERVED_CANDIDATE":2,"WITHDRAWN":1,"REVOKED":0}[prior["state_after"]]
+                next_slots={"RESERVED_CANDIDATE":2,"WITHDRAWN":1,"REVOKED":0}[next_state]
+                require(seq+1+reserved_control_slots(states)-old_slots+next_slots<=MAX_EVENTS,
+                        "LEDGER_CAPACITY_REACHED")
                 require(callable(self._authorizer),"OWNER_AUTHORITY_REQUIRED")
                 auth=self._authorizer(request_raw,proposal_raw,evidence_raw,
                                       None if prior is None else encode_proposal(prior))
