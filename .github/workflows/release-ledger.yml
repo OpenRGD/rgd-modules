@@ -1,0 +1,43 @@
+name: EXT-01B.3C registry immutable candidate ledger
+on:
+  pull_request:
+    paths: ['tools/release_ledger.py', 'tools/tuf_ledger_authority.py', 'tests_ledger/**', 'docs/RELEASE_LEDGER_EXT_01B3C.md', '.github/workflows/release-ledger.yml']
+permissions:
+  contents: read
+jobs:
+  ledger:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.10', '3.12']
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: OpenRGD/openrgd
+          ref: fb9ac5e34c0bfe082bb33f4d8346f881b871a620
+          path: .upstream/core
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Verify independent pin and protected catalog/runtime
+        run: |
+          test "$(git -C .upstream/core rev-parse HEAD)" = fb9ac5e34c0bfe082bb33f4d8346f881b871a620
+          git diff --exit-code 04bdcd5e3aeaea56204534870ec3aa0d76556e37 HEAD -- registry rgd_registry tools/review_publication.py tools/review_trusted_candidate.py
+          git diff --check 04bdcd5e3aeaea56204534870ec3aa0d76556e37 HEAD
+      - name: Install test-only direct dependencies
+        run: python -m pip install jsonschema==4.23.0 packaging==25.0 build==1.3.0 setuptools==80.9.0 wheel==0.45.1 tuf==7.0.1 'securesystemslib[crypto]==1.6.0'
+      - name: SQLite ledger, contention, crash and actual TUF producer
+        env:
+          PYTHONPATH: ${{ github.workspace }}/.upstream/core/contracts/module-publication/v0.1.0:${{ github.workspace }}/.upstream/core/contracts/publication-trust/v0.1.0:${{ github.workspace }}/.upstream/core/contracts/release-ledger/v0.1.0:${{ github.workspace }}/tests_trust:${{ github.workspace }}
+        run: |
+          python -m unittest discover -s tests_ledger -v
+          python -O -m unittest discover -s tests_ledger -v
+          python -m unittest discover -s tests_trust -v
+          python -m tools.generate_index --check
