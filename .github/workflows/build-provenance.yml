@@ -1,0 +1,44 @@
+name: EXT-01B.3D registry provenance review
+on:
+  pull_request:
+    paths: ['tools/provenance_ledger_authority.py', 'tests_provenance/**', 'docs/BUILD_PROVENANCE_EXT_01B3D.md', '.github/workflows/build-provenance.yml']
+permissions:
+  contents: read
+jobs:
+  provenance-ledger:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.10', '3.12']
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: OpenRGD/openrgd
+          ref: 73c1380f4cbdff7ddca49cc6368bbe4fcb8fd276
+          path: .upstream/core
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Protect existing registry and exact Core pin
+        run: |
+          test "$(git -C .upstream/core rev-parse HEAD)" = 73c1380f4cbdff7ddca49cc6368bbe4fcb8fd276
+          git diff --exit-code 467a4569901caf85791e637335448ec2f314e7c6 HEAD -- registry rgd_registry tools/review_publication.py tools/review_trusted_candidate.py tools/release_ledger.py tools/tuf_ledger_authority.py
+          git diff --check 467a4569901caf85791e637335448ec2f314e7c6 HEAD
+      - name: Install test-only direct dependencies
+        run: python -m pip install jsonschema==4.23.0 packaging==25.0 build==1.3.0 setuptools==80.9.0 wheel==0.45.1 tuf==7.0.1 'securesystemslib[crypto]==1.6.0'
+      - name: Actual provenance TUF and ledger integration plus regressions
+        env:
+          PYTHONPATH: ${{ github.workspace }}/.upstream/core/contracts/module-publication/v0.1.0:${{ github.workspace }}/.upstream/core/contracts/publication-trust/v0.1.0:${{ github.workspace }}/.upstream/core/contracts/release-ledger/v0.1.0:${{ github.workspace }}/.upstream/core/contracts/build-provenance/v0.1.0:${{ github.workspace }}/tests_trust:${{ github.workspace }}/tests_ledger:${{ github.workspace }}
+        run: |
+          python -m unittest discover -s tests_provenance -v
+          python -O -m unittest discover -s tests_provenance -v
+          python -m unittest discover -s tests_ledger -v
+          python -m unittest discover -s tests_trust -v
+          python -m tools.generate_index --check
